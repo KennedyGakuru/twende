@@ -284,10 +284,10 @@ export default function ProfileScreen() {
         
         <View className="pb-8 mt-4">
           <Text className="font-sans text-center text-neutral-500 text-sm">
-            Matatu Tracker v1.0.0
+            Twende v1.0.0
           </Text>
           <Text className="font-sans text-center text-neutral-400 text-xs mt-1">
-            © 2025 Matatu Tracker
+            © 2025 Twende
           </Text>
         </View>
       </ScrollView>
