@@ -39,7 +39,7 @@ interface TrackingData {
 
 export default function LiveTrackingScreen() {
   const router = useRouter();
-  const { id } = useLocalSearchParams(); // vehicle id
+  const { id } = useLocalSearchParams(); 
   const { location, startWatchingLocation } = useLocation();
   const movementIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -54,6 +54,7 @@ export default function LiveTrackingScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [routePolyline, setRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const infoCardHeight = useSharedValue(150);
   const arrowRotation = useSharedValue(0);
@@ -71,8 +72,12 @@ export default function LiveTrackingScreen() {
   const fetchRoutePolyline = async (origin: string, destination: string) => {
     try {
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}`;
-      const response = await fetch(url);
-      const data = await response.json();
+     const response = await fetch(url);
+     const data = await response.json();
+     //console.log("Directions URL:", url);
+     //console.log('My Google Maps API key is:', process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY);
+
+
 
       if (data.status === 'OK' && data.routes.length > 0) {
         const points = data.routes[0].overview_polyline.points;
@@ -88,50 +93,130 @@ export default function LiveTrackingScreen() {
   };
 
   const fetchTrackingData = async () => {
+  try {
+    // Fetch vehicles for this route (by route_id)
+    const { data: vehicles, error: vehicleError } = await supabase
+      .from('vehicles')
+      .select('*, vehicle_profiles(*)')  // Join vehicle_profiles too
+      .eq('route_id', id);
+
+    if (vehicleError) {
+      console.error('Error fetching vehicles:', vehicleError);
+      setError('Failed to fetch vehicles');
+      setIsLoading(false);
+      return;
+    }
+
+    if (!vehicles || vehicles.length === 0) {
+      setError(`No vehicles found for route ID: ${id}`);
+      setIsLoading(false);
+      return;
+    }
+
+    // Pick first vehicle (or extend later to handle multiple)
+    const vehicle = vehicles[0];
+    const profile = vehicle.vehicle_profiles?.[0] || {};
+
+    // Since no vehicle_tracking table, create mock tracking data here
+    const mockTracking = {
+      vehicle_id: vehicle.id,
+      current_location: {
+        latitude: -1.2921, // Nairobi default
+        longitude: 36.8219
+      },
+      destination: {
+        latitude: -1.2864,
+        longitude: 36.8230
+      },
+      current_speed: 45,
+      estimated_arrival: 15,
+      capacity: vehicle.capacity || 50,
+      available_seats: vehicle.available || 20
+    };
+
+    // Combine vehicle, profile, and mock tracking into one object
+    const combinedData = {
+      ...mockTracking,
+      vehicle_info: vehicle,
+      vehicle_profile: profile,
+      route_info: vehicle.routes || null,
+      driver_name: profile.driver_name || 'Driver Name',
+      driver_phone: profile.driver_phone || null,
+      plate_number: profile.plate_number || vehicle.plate_number
+    };
+
+    // Transform data for UI usage
+    const transformedData = transformDatabaseData(combinedData);
+    setTrackingData(transformedData);
+
+    // Initialize map tracking logic with combined data
+    initializeTracking(combinedData);
+
+  } catch (error) {
+    console.error('Error in fetchTrackingData:', error);
+    setError('Failed to load tracking data');
+    setIsLoading(false);
+  }
+};
+
+
+  // Transform database data to match your interface
+  const transformDatabaseData = (combinedData: any): TrackingData => {
+  const vehicle = combinedData.vehicle_info || {};
+  const profile = combinedData.vehicle_profile || {};
+  const route = combinedData.route_info || {};
+  const tracking = combinedData;
+
+  return {
+    vehicleId: vehicle.id || 'Unknown Vehicle',
+    routeName: route.name || route.route_name || 'Route Name',
+    driverName: profile.driver_name || 'Driver Name',
+    capacity: vehicle.capacity || tracking.capacity || 50,
+    availableSeats: vehicle.available || tracking.available_seats || 20,
+    currentSpeed: tracking.current_speed || 45,
+    estimatedArrival: tracking.estimated_arrival || 15,
+    currentLocation: tracking.current_location || {
+      latitude: -1.2921,
+      longitude: 36.8219,
+    },
+    destination: tracking.destination || {
+      latitude: -1.2864,
+      longitude: 36.8230,
+    },
+    nextStops: route.stops || []
+  };
+};
+
+
+  const initializeTracking = async (dbData: any) => {
     try {
-      const { data, error } = await supabase
-        .from('vehicle_tracking') // Fixed table name
-        .select('*')
-        .eq('vehicle_id', id) // Fixed column name
-        .single();
-
-      if (error) {
-        console.error('Error fetching tracking data:', error);
-        Alert.alert('Error', 'Failed to load tracking data');
-        return;
-      }
-
-      if (!data) {
-        Alert.alert('Error', 'No tracking data found for this vehicle');
-        return;
-      }
-
-      setTrackingData(data);
+      const currentLoc = dbData.current_location || dbData.currentLocation;
       
       // Ensure current location exists and has valid coordinates
-      if (data.current_location && 
-          typeof data.current_location.latitude === 'number' && 
-          typeof data.current_location.longitude === 'number') {
+      if (currentLoc && 
+          typeof currentLoc.latitude === 'number' && 
+          typeof currentLoc.longitude === 'number') {
         
-        setVehiclePosition(data.current_location);
-        setRemainingTime(data.estimated_arrival || 0);
+        setVehiclePosition(currentLoc);
+        setRemainingTime(dbData.estimated_arrival || dbData.estimatedArrival || 15);
 
         const initialRegion = {
-          latitude: data.current_location.latitude,
-          longitude: data.current_location.longitude,
+          latitude: currentLoc.latitude,
+          longitude: currentLoc.longitude,
           latitudeDelta: 0.01,
           longitudeDelta: 0.01,
         };
         setMapRegion(initialRegion);
 
         // Only fetch route if we have valid destination
-        if (data.destination && 
-            typeof data.destination.latitude === 'number' && 
-            typeof data.destination.longitude === 'number') {
+        const dest = dbData.destination;
+        if (dest && 
+            typeof dest.latitude === 'number' && 
+            typeof dest.longitude === 'number') {
           
           const polylinePoints = await fetchRoutePolyline(
-            `${data.current_location.latitude},${data.current_location.longitude}`,
-            `${data.destination.latitude},${data.destination.longitude}`
+            `${currentLoc.latitude},${currentLoc.longitude}`,
+            `${dest.latitude},${dest.longitude}`
           );
 
           setRoutePolyline(polylinePoints);
@@ -152,12 +237,15 @@ export default function LiveTrackingScreen() {
         }, 6000);
 
         setIsLoading(false);
+        setError(null);
       } else {
-        Alert.alert('Error', 'Invalid location data');
+        setError('Invalid location data in database');
+        setIsLoading(false);
       }
     } catch (error) {
-      console.error('Error in fetchTrackingData:', error);
-      Alert.alert('Error', 'Failed to load tracking data');
+      console.error('Error initializing tracking:', error);
+      setError('Failed to initialize tracking');
+      setIsLoading(false);
     }
   };
 
@@ -172,6 +260,10 @@ export default function LiveTrackingScreen() {
         }
       } catch (error) {
         console.error('Error initializing:', error);
+        if (isMounted) {
+          setError('Failed to initialize location services');
+          setIsLoading(false);
+        }
       }
     };
 
@@ -220,10 +312,53 @@ export default function LiveTrackingScreen() {
     arrowRotation.value = withTiming(newValue ? 1 : 0, { duration: 300 });
   };
 
+  // Show error state
+  if (error) {
+    return (
+      <View className="flex-1 bg-white">
+        <StatusBar style="dark" />
+        <View className="pt-14 pb-4 px-6 flex-row items-center justify-between bg-white">
+          <TouchableOpacity 
+            className="w-10 h-10 bg-neutral-100 rounded-full items-center justify-center" 
+            onPress={() => router.back()}
+          >
+            <Ionicons name="chevron-back" size={24} color="#404040" />
+          </TouchableOpacity>
+          <Text className="font-heading text-lg text-neutral-800">Live Tracking</Text>
+          <View className="w-10" />
+        </View>
+        
+        <View className="flex-1 items-center justify-center px-6">
+          <Ionicons name="alert-circle" size={64} color="#ef4444" />
+          <Text className="font-heading text-xl text-neutral-800 mt-4 text-center">
+            Tracking Unavailable
+          </Text>
+          <Text className="font-sans text-neutral-600 mt-2 text-center">
+            {error}
+          </Text>
+          <Button 
+            variant="primary" 
+            className="mt-6"
+            onPress={() => {
+              setError(null);
+              setIsLoading(true);
+              fetchTrackingData();
+            }}
+          >
+            <Text>Retry</Text>
+          </Button>
+        </View>
+      </View>
+    );
+  }
+
+  // Show loading state
   if (isLoading || !trackingData || !vehiclePosition) {
     return (
       <View className="flex-1 bg-white items-center justify-center">
-        <Text className="text-neutral-600">Loading tracking data...</Text>
+        <Ionicons name="bus" size={48} color="#0066ff" />
+        <Text className="text-neutral-600 mt-4">Loading tracking data...</Text>
+        <Text className="text-neutral-400 mt-2 text-sm">Vehicle ID: {id}</Text>
       </View>
     );
   }
