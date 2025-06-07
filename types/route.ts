@@ -4,6 +4,11 @@ export type Coordinate = {
 };
 
 export type RouteRaw = {
+  coordinates: never[];
+  start_lat: any;
+  start_lng: any;
+  end_lat: any;
+  end_lng: any;
   id: string;
   name: string;
   start_location: string;
@@ -40,6 +45,12 @@ export type VehicleRaw = {
 };
 
 export type TransformedRouteItem = {
+  start_location: any;
+  end_location: any;
+  start_lng: any;
+  end_lat: any;
+  end_lng: any;
+  start_lat: any;
   id: string;
   name: string;
   startLocation: string;
