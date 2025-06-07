@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Image, Dimensions } from 'react-native';
 import MapView, { LatLng, Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import { StatusBar } from 'expo-status-bar';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -54,6 +54,7 @@ export default function LiveTrackingScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [routePolyline, setRoutePolyline] = useState<{ latitude: number; longitude: number }[]>([]);
   const [mapReady, setMapReady] = useState(false);
+  const [isAutoFollow, setIsAutoFollow] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const infoCardHeight = useSharedValue(150);
@@ -96,9 +97,17 @@ export default function LiveTrackingScreen() {
   try {
     // Fetch vehicles for this route (by route_id)
     const { data: vehicles, error: vehicleError } = await supabase
-      .from('vehicles')
-      .select('*, vehicle_profiles(*)')  // Join vehicle_profiles too
-      .eq('route_id', id);
+     .from('vehicles')
+     .select(`
+      *,
+      vehicle_profiles(*),
+      routes (
+      end_lat,
+      end_lng,
+      name
+      )
+      `)
+     .eq('route_id', id);
 
     if (vehicleError) {
       console.error('Error fetching vehicles:', vehicleError);
@@ -113,26 +122,26 @@ export default function LiveTrackingScreen() {
       return;
     }
 
-    // Pick first vehicle (or extend later to handle multiple)
     const vehicle = vehicles[0];
     const profile = vehicle.vehicle_profiles?.[0] || {};
+    const route = vehicle.routes;
 
-    // Since no vehicle_tracking table, create mock tracking data here
     const mockTracking = {
-      vehicle_id: vehicle.id,
-      current_location: {
-        latitude: -1.2921, // Nairobi default
-        longitude: 36.8219
-      },
-      destination: {
-        latitude: -1.2864,
-        longitude: 36.8230
-      },
-      current_speed: 45,
-      estimated_arrival: 15,
-      capacity: vehicle.capacity || 50,
-      available_seats: vehicle.available || 20
-    };
+    vehicle_id: vehicle.id,
+    current_location: {
+    latitude: -1.2921, // Nairobi CBD center
+    longitude: 36.8219
+  },
+  destination: {
+    latitude: route?.end_lat ?? -1.2864,   // fallback if route is missing
+    longitude: route?.end_lng ?? 36.8230
+  },
+  current_speed: 45,
+  estimated_arrival: 15,
+  capacity: vehicle.capacity || 50,
+  available_seats: vehicle.available || 20
+};
+
 
     // Combine vehicle, profile, and mock tracking into one object
     const combinedData = {
@@ -186,7 +195,6 @@ export default function LiveTrackingScreen() {
     nextStops: route.stops || []
   };
 };
-
 
   const initializeTracking = async (dbData: any) => {
     try {
@@ -280,22 +288,28 @@ export default function LiveTrackingScreen() {
     };
   }, [id]);
 
-  // Update map region when positions change
   useEffect(() => {
-    if (!mapReady || !location || !vehiclePosition || isLoading) return;
+  if (!mapReady || !location || !vehiclePosition || isLoading || !isAutoFollow) return;
 
-    const newRegion = {
-      latitude: (location.latitude + vehiclePosition.latitude) / 2,
-      longitude: (location.longitude + vehiclePosition.longitude) / 2,
-      latitudeDelta: Math.abs(location.latitude - vehiclePosition.latitude) * 1.5 + 0.01,
-      longitudeDelta: Math.abs(location.longitude - vehiclePosition.longitude) * 1.5 + 0.01,
-    };
+  const newRegion = {
+    latitude: (location.latitude + vehiclePosition.latitude) / 2,
+    longitude: (location.longitude + vehiclePosition.longitude) / 2,
+    latitudeDelta: Math.abs(location.latitude - vehiclePosition.latitude) * 1.5 + 0.01,
+    longitudeDelta: Math.abs(location.longitude - vehiclePosition.longitude) * 1.5 + 0.01,
+  };
 
-    // Animate to new region smoothly
-    if (mapRef.current) {
-      mapRef.current.animateToRegion(newRegion, 1000);
-    }
-  }, [location?.latitude, location?.longitude, vehiclePosition?.latitude, vehiclePosition?.longitude, mapReady]);
+  if (mapRef.current) {
+    mapRef.current.animateToRegion(newRegion, 1000);
+  }
+}, [
+  location?.latitude,
+  location?.longitude,
+  vehiclePosition?.latitude,
+  vehiclePosition?.longitude,
+  mapReady,
+  isAutoFollow, // 👈 Depend on this too
+]);
+
 
   const animatedInfoCardStyle = useAnimatedStyle(() => ({ 
     height: infoCardHeight.value 
@@ -329,7 +343,14 @@ export default function LiveTrackingScreen() {
         </View>
         
         <View className="flex-1 items-center justify-center px-6">
-          <Ionicons name="alert-circle" size={64} color="#ef4444" />
+          <Image
+                    source={require('../../assets/404 Error .png')}
+                    style={{
+                        width: Dimensions.get('window').width * 0.85,
+                        height: Dimensions.get('window').height * 0.4,
+                      }}
+                    resizeMode='contain'
+                    />
           <Text className="font-heading text-xl text-neutral-800 mt-4 text-center">
             Tracking Unavailable
           </Text>
@@ -388,6 +409,8 @@ export default function LiveTrackingScreen() {
             rotateEnabled 
             provider={PROVIDER_GOOGLE}
             onMapReady={() => setMapReady(true)}
+            onPanDrag={() => setIsAutoFollow(false)} // 👈 This disables auto-follow
+            onRegionChangeComplete={() => setIsAutoFollow(false)} // Optional
             loadingEnabled={true}
           >
             {routePolyline.length > 0 && (
@@ -463,6 +486,12 @@ export default function LiveTrackingScreen() {
               <Text className="font-sans text-neutral-600">{trackingData.routeName}</Text>
             </View>
           </View>
+          <TouchableOpacity className="absolute bottom-30 right-0 bg-gray-300 p-2.5 rounded-lg shadow-md shadow-black/10"
+           onPress={() => setIsAutoFollow(true)}
+             >
+           <Text style={{ fontWeight: 'bold', color: '#333' }}>Follow Vehicle</Text>
+          </TouchableOpacity>
+
           
           {/* ETA info */}
           <View className="flex-row justify-between mt-6">
@@ -569,3 +598,6 @@ export default function LiveTrackingScreen() {
     </View>
   );
 }
+
+
+
