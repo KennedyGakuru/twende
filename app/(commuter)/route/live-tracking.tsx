@@ -49,6 +49,7 @@ export default function LiveTrackingScreen() {
   const [trackingData, setTrackingData] = useState<TrackingData | null>(null);
   const [mapRegion, setMapRegion] = useState<any>(null);
   const [vehiclePosition, setVehiclePosition] = useState<{latitude: number; longitude: number} | null>(null);
+  const [vehicleRotation, setVehicleRotation] = useState(0);
   const [remainingTime, setRemainingTime] = useState(0);
   const [isInfoExpanded, setIsInfoExpanded] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -56,6 +57,8 @@ export default function LiveTrackingScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [isAutoFollow, setIsAutoFollow] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasSetInitialRegion = useRef(false);
+
 
   const infoCardHeight = useSharedValue(150);
   const arrowRotation = useSharedValue(0);
@@ -129,11 +132,11 @@ export default function LiveTrackingScreen() {
     const mockTracking = {
     vehicle_id: vehicle.id,
     current_location: {
-    latitude: -1.2921, // Nairobi CBD center
+    latitude: -1.2921, 
     longitude: 36.8219
   },
   destination: {
-    latitude: route?.end_lat ?? -1.2864,   // fallback if route is missing
+    latitude: route?.end_lat ?? -1.2864,   
     longitude: route?.end_lng ?? 36.8230
   },
   current_speed: 45,
@@ -196,18 +199,64 @@ export default function LiveTrackingScreen() {
   };
 };
 
-  const initializeTracking = async (dbData: any) => {
-    try {
-      const currentLoc = dbData.current_location || dbData.currentLocation;
-      
-      // Ensure current location exists and has valid coordinates
-      if (currentLoc && 
-          typeof currentLoc.latitude === 'number' && 
-          typeof currentLoc.longitude === 'number') {
-        
-        setVehiclePosition(currentLoc);
-        setRemainingTime(dbData.estimated_arrival || dbData.estimatedArrival || 15);
+const calculateBearing = (start: {latitude: number, longitude: number}, end: {latitude: number, longitude: number}) => {
+  const startLat = toRadians(start.latitude);
+  const startLng = toRadians(start.longitude);
+  const endLat = toRadians(end.latitude);
+  const endLng = toRadians(end.longitude);
 
+  const y = Math.sin(endLng - startLng) * Math.cos(endLat);
+  const x = Math.cos(startLat) * Math.sin(endLat) -
+            Math.sin(startLat) * Math.cos(endLat) * Math.cos(endLng - startLng);
+  let bearing = Math.atan2(y, x);
+  bearing = toDegrees(bearing);
+  return (bearing + 360) % 360;
+};
+
+const toRadians = (degrees: number) => degrees * Math.PI / 180;
+const toDegrees = (radians: number) => radians * 180 / Math.PI;
+
+const RotatableMarker = ({ coordinate, rotation, children }: {
+  coordinate: { latitude: number, longitude: number },
+  rotation: number,
+  children: React.ReactNode
+}) => {
+  const markerRef = useRef<Marker>(null);
+  
+  useEffect(() => {
+    if (markerRef.current) {
+      markerRef.current.setNativeProps({
+        rotation: rotation
+      });
+    }
+  }, [rotation]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      coordinate={coordinate}
+      anchor={{ x: 0.5, y: 0.5 }}
+      flat={true} // Important for rotation to work properly
+    >
+      {children}
+    </Marker>
+  );
+};
+
+  const initializeTracking = async (dbData: any) => {
+  try {
+    const currentLoc = dbData.current_location || dbData.currentLocation;
+    
+    // Ensure current location exists and has valid coordinates
+    if (currentLoc && 
+        typeof currentLoc.latitude === 'number' && 
+        typeof currentLoc.longitude === 'number') {
+
+      setVehiclePosition(currentLoc);
+      setRemainingTime(dbData.estimated_arrival || dbData.estimatedArrival || 15);
+
+      // Only set map region once on first initialization
+      if (!hasSetInitialRegion.current) {
         const initialRegion = {
           latitude: currentLoc.latitude,
           longitude: currentLoc.longitude,
@@ -215,47 +264,79 @@ export default function LiveTrackingScreen() {
           longitudeDelta: 0.01,
         };
         setMapRegion(initialRegion);
-
-        // Only fetch route if we have valid destination
-        const dest = dbData.destination;
-        if (dest && 
-            typeof dest.latitude === 'number' && 
-            typeof dest.longitude === 'number') {
-          
-          const polylinePoints = await fetchRoutePolyline(
-            `${currentLoc.latitude},${currentLoc.longitude}`,
-            `${dest.latitude},${dest.longitude}`
-          );
-
-          setRoutePolyline(polylinePoints);
-
-          // Start movement simulation only if we have route points
-          if (polylinePoints.length > 0) {
-            movementIntervalRef.current = setInterval(() => {
-              const nextIndex = (routeIndexRef.current + 1) % polylinePoints.length;
-              routeIndexRef.current = nextIndex;
-              setVehiclePosition(polylinePoints[nextIndex]);
-            }, 3000);
-          }
-        }
-
-        // Start countdown
-        countdownIntervalRef.current = setInterval(() => {
-          setRemainingTime((prev) => Math.max(0, prev - 0.1));
-        }, 6000);
-
-        setIsLoading(false);
-        setError(null);
-      } else {
-        setError('Invalid location data in database');
-        setIsLoading(false);
+        hasSetInitialRegion.current = true;
       }
-    } catch (error) {
-      console.error('Error initializing tracking:', error);
-      setError('Failed to initialize tracking');
+
+      // Only fetch route if we have valid destination
+      const dest = dbData.destination;
+      if (dest && 
+          typeof dest.latitude === 'number' && 
+          typeof dest.longitude === 'number') {
+        
+        const polylinePoints = await fetchRoutePolyline(
+          `${currentLoc.latitude},${currentLoc.longitude}`,
+          `${dest.latitude},${dest.longitude}`
+        );
+
+        setRoutePolyline(polylinePoints);
+
+        // Start movement simulation only if we have route points
+        if (polylinePoints.length > 0) {
+          // Clear any existing interval first
+          if (movementIntervalRef.current) {
+            clearInterval(movementIntervalRef.current);
+          }
+          
+          // Initialize route index if not set
+          if (routeIndexRef.current === undefined || routeIndexRef.current >= polylinePoints.length) {
+            routeIndexRef.current = 0;
+          }
+          
+          movementIntervalRef.current = setInterval(() => {
+            const currentIndex = routeIndexRef.current;
+            const nextIndex = (currentIndex + 1) % polylinePoints.length;
+            
+            // Calculate bearing between current and next point
+            if (currentIndex < polylinePoints.length - 1) {
+              const bearing = calculateBearing(
+                polylinePoints[currentIndex],
+                polylinePoints[nextIndex]
+              );
+              setVehicleRotation(bearing);
+            }
+            
+            routeIndexRef.current = nextIndex;
+            setVehiclePosition(polylinePoints[nextIndex]);
+          }, 3000);
+
+          // Start countdown
+          if (countdownIntervalRef.current) {
+            clearInterval(countdownIntervalRef.current);
+          }
+          
+          countdownIntervalRef.current = setInterval(() => {
+            setRemainingTime((prev) => Math.max(0, prev - 0.1));
+          }, 6000);
+        }
+      }
+
+      setIsLoading(false);
+      setError(null);
+    } else {
+      setError('Invalid location data in database');
       setIsLoading(false);
     }
-  };
+  } catch (error) {
+    console.error('Error initializing tracking:', error);
+    // Clean up intervals on error
+    if (movementIntervalRef.current) clearInterval(movementIntervalRef.current);
+    if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
+    
+    setError('Failed to initialize tracking');
+    setIsLoading(false);
+  }
+};
+
 
   useEffect(() => {
     let isMounted = true;
@@ -289,27 +370,20 @@ export default function LiveTrackingScreen() {
   }, [id]);
 
   useEffect(() => {
-  if (!mapReady || !location || !vehiclePosition || isLoading || !isAutoFollow) return;
+  if (!mapReady || !vehiclePosition || isLoading || !isAutoFollow) return;
 
+  // Simple follow - just center on vehicle with fixed zoom
   const newRegion = {
-    latitude: (location.latitude + vehiclePosition.latitude) / 2,
-    longitude: (location.longitude + vehiclePosition.longitude) / 2,
-    latitudeDelta: Math.abs(location.latitude - vehiclePosition.latitude) * 1.5 + 0.01,
-    longitudeDelta: Math.abs(location.longitude - vehiclePosition.longitude) * 1.5 + 0.01,
+    latitude: vehiclePosition.latitude,
+    longitude: vehiclePosition.longitude,
+    latitudeDelta: 0.01,  // Fixed zoom level
+    longitudeDelta: 0.01,
   };
 
   if (mapRef.current) {
-    mapRef.current.animateToRegion(newRegion, 1000);
+    mapRef.current.animateToRegion(newRegion, 500);
   }
-}, [
-  location?.latitude,
-  location?.longitude,
-  vehiclePosition?.latitude,
-  vehiclePosition?.longitude,
-  mapReady,
-  isAutoFollow, // 👈 Depend on this too
-]);
-
+}, [vehiclePosition?.latitude, vehiclePosition?.longitude, isAutoFollow, mapReady]);
 
   const animatedInfoCardStyle = useAnimatedStyle(() => ({ 
     height: infoCardHeight.value 
@@ -344,7 +418,7 @@ export default function LiveTrackingScreen() {
         
         <View className="flex-1 items-center justify-center px-6">
           <Image
-                    source={require('../../assets/404-Error.png')}
+                    source={require('../../../assets/404-Error.png')}
                     style={{
                         width: Dimensions.get('window').width * 0.85,
                         height: Dimensions.get('window').height * 0.4,
@@ -409,8 +483,8 @@ export default function LiveTrackingScreen() {
             rotateEnabled 
             provider={PROVIDER_GOOGLE}
             onMapReady={() => setMapReady(true)}
-            onPanDrag={() => setIsAutoFollow(false)} // 👈 This disables auto-follow
-            onRegionChangeComplete={() => setIsAutoFollow(false)} // Optional
+            onPanDrag={() => setIsAutoFollow(false)} 
+            onRegionChangeComplete={() => setIsAutoFollow(false)} 
             loadingEnabled={true}
           >
             {routePolyline.length > 0 && (
@@ -421,17 +495,25 @@ export default function LiveTrackingScreen() {
               />
             )}
             
-            {vehiclePosition && (
-              <Marker 
-                coordinate={vehiclePosition} 
-                title={trackingData.vehicleId}
-                identifier="vehicle"
-              >
-                <View className="bg-blue-500 rounded-full p-2">
-                  <Ionicons name="navigate" size={16} color="white" />
-                </View>
-              </Marker>
-            )}
+           {vehiclePosition && (
+           <Marker
+          coordinate={vehiclePosition}
+          anchor={{ x: 0.5, y: 0.5 }}
+         flat={true}
+          rotation={vehicleRotation}
+         >
+         <View style={{ 
+         width: 32,
+         height: 32,
+         alignItems: 'center',
+         justifyContent: 'center'
+         }}>
+           <View className="bg-blue-500 rounded-full p-2">
+            <Ionicons name="navigate" size={16} color="white" />
+             </View>
+            </View>
+           </Marker>
+           )}
             
             {trackingData.nextStops?.map((stop, index) => (
               <Marker 
