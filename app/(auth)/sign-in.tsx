@@ -1,5 +1,5 @@
 import  { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Image, ScrollView, KeyboardAvoidingView, Platform, } from 'react-native';
 import { Link, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { Button } from 'components/ui/Button';

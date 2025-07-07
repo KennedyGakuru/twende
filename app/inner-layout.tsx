@@ -70,17 +70,17 @@ export default function InnerLayout() {
 
   return (
     <GestureHandlerRootView className="flex-1">
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="role-selection" />
-        <Stack.Screen name="(auth)" />
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="(driver)" />
-        <Stack.Screen name="(sacco)" />
-        <Stack.Screen name="route/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="route/live-tracking" options={{ presentation: 'card' }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-      <StatusBar style="auto" />
-    </GestureHandlerRootView>
+    <Stack screenOptions={{ headerShown: false }}>
+    <Stack.Screen name="role-selection" />
+    <Stack.Screen name="(auth)" />
+    <Stack.Screen name="(commuter)" />
+    <Stack.Screen name="(driver)" />
+    <Stack.Screen name="(sacco)" />
+    <Stack.Screen name="(commuter)/route/[id]" options={{ presentation: 'modal' }} />
+    <Stack.Screen name="(commuter)/route/live-tracking" options={{ presentation: 'card' }} />
+    <Stack.Screen name="+not-found" />
+  </Stack>
+  <StatusBar style="auto" />
+</GestureHandlerRootView>
   );
 }
