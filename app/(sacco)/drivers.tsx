@@ -1,37 +1,64 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { supabase } from 'lib/supabase'; 
+import { supabase } from 'lib/supabase';
 
 export default function CreateStageScreen() {
   const [name, setName] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
+  const [routes, setRoutes] = useState('');
   const [congestion, setCongestion] = useState('');
 
   const handleSubmit = async () => {
-    if (!name || !latitude || !longitude || !congestion) {
-      Alert.alert('All fields are required');
+    // Validate inputs
+    if (!name || !latitude || !longitude || !routes || !congestion) {
+      Alert.alert('Error', 'All fields are required');
       return;
     }
 
-    const { error } = await supabase.from('stages').insert({
-      name,
-      location: {
-        latitude: parseFloat(latitude),
-        longitude: parseFloat(longitude),
-      },
-      congestion,
-    });
+    // Validate congestion
+    const allowedCongestion = ['low', 'medium', 'high'];
+    if (!allowedCongestion.includes(congestion.toLowerCase())) {
+      Alert.alert('Error', 'Congestion must be: low, medium, or high');
+      return;
+    }
 
-    if (error) {
-      Alert.alert('Error creating stage', error.message);
-    } else {
-      Alert.alert('Stage created successfully!');
+    // Validate routes (must be integer)
+    const routesNumber = parseInt(routes);
+    if (isNaN(routesNumber)) {
+      Alert.alert('Error', 'Routes must be a number');
+      return;
+    }
+
+    // Validate coordinates
+    const latNumber = parseFloat(latitude);
+    const lngNumber = parseFloat(longitude);
+    if (isNaN(latNumber) || isNaN(lngNumber)) {
+      Alert.alert('Error', 'Invalid coordinates');
+      return;
+    }
+
+    try {
+      const { error } = await supabase.from('stages').insert({
+        name,
+        latitude: latNumber,
+        longitude: lngNumber,
+        routes: routesNumber,
+        congestion: congestion.toLowerCase() 
+      });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Stage created successfully!');
+      // Reset form
       setName('');
       setLatitude('');
       setLongitude('');
       setCongestion('');
+      setRoutes('');
+    } catch (error) {
+      Alert.alert('Error', error.message || 'Failed to create stage');
     }
   };
 
@@ -46,20 +73,31 @@ export default function CreateStageScreen() {
         onChangeText={setName}
         className="border border-neutral-300 p-3 rounded-xl mb-4"
       />
+
       <TextInput
         placeholder="Latitude"
         value={latitude}
         onChangeText={setLatitude}
-        keyboardType="numeric"
+        keyboardType="numbers-and-punctuation"
         className="border border-neutral-300 p-3 rounded-xl mb-4"
       />
+
       <TextInput
         placeholder="Longitude"
         value={longitude}
         onChangeText={setLongitude}
-        keyboardType="numeric"
+        keyboardType="numbers-and-punctuation"
         className="border border-neutral-300 p-3 rounded-xl mb-4"
       />
+
+      <TextInput
+        placeholder="Number of Routes (integer)"
+        value={routes}
+        onChangeText={setRoutes}
+        keyboardType="number-pad"
+        className="border border-neutral-300 p-3 rounded-xl mb-4"
+      />
+
       <TextInput
         placeholder="Congestion (low, medium, high)"
         value={congestion}
