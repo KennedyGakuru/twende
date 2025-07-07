@@ -1,23 +1,26 @@
+# Directories
 node_modules/
 .expo/
 dist/
+web-build/
+ios/
+android/
+
+# Logs and debug
 npm-debug.*
+*.orig.*
+
+# Secrets & credentials
+.env
+.env.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
-*.orig.*
-web-build/
 
-
-
-
-ios
-android
-
-# macOS
+# macOS system files
 .DS_Store
 
-# Temporary files created by Metro to check the health of the file watcher
+# Metro cache
 .metro-health-check*
