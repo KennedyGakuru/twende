@@ -1,4 +1,4 @@
-import React from 'react';
+{/*import React from 'react';
 import { View, Text, FlatList, SafeAreaView } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
@@ -26,4 +26,4 @@ export default function SearchScreen() {
       />
     </SafeAreaView>
   );
-}
+}*/}
