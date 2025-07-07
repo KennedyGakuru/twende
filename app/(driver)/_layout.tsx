@@ -25,20 +25,20 @@ export default function DriverLayout() {
         }}
       />
       <Tabs.Screen
-        name="passengers"
+        name="trips"
         options={{
-          title: 'Passengers',
+          title: 'Trips',
           tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="people" size={size} color={color} />
+            <Ionicons name="reader" size={size} color={color} />
           ),
         }}
       />
       <Tabs.Screen
-        name="earnings"
+        name="analytics"
         options={{
-          title: 'Earnings',
+          title: 'Analytics',
           tabBarIcon: ({ color, size }: { color: string; size: number }) => (
-            <Ionicons name="cash" size={size} color={color} />
+            <Ionicons name="stats-chart" size={size} color={color} />
           ),
         }}
       />
