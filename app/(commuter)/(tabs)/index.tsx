@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, TextInput, Platform, StatusBar } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, Text, ScrollView, TouchableOpacity, Dimensions, ActivityIndicator, TextInput, Platform, StatusBar,Animated,RefreshControl} from 'react-native';
 import { Image } from 'expo-image';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useLocation } from 'hooks/useLocation';
@@ -9,8 +9,10 @@ import { Link, router } from 'expo-router';
 import { formatCurrency, getTimeBasedGreeting } from 'lib/utilis';
 import CustomMapView from 'components/map/CustomMapView';
 import { supabase } from 'lib/supabase';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const nearbyVehicles = [
   { id: '1', latitude: -1.2864, longitude: 36.8172, routeName: '105' },
@@ -27,6 +29,13 @@ type RouteRaw = {
   estimated_time: number;
 };
 
+const quickActions = [
+  { id: 1, title: 'Live Tracking', icon: 'location', color: '#3b82f6', bgColor: '#eff6ff' },
+  { id: 2, title: 'Route Planner', icon: 'map', color: '#10b981', bgColor: '#ecfdf5' },
+  { id: 3, title: 'Saved Routes', icon: 'bookmark', color: '#f59e0b', bgColor: '#fffbeb' },
+  { id: 4, title: 'History', icon: 'time', color: '#8b5cf6', bgColor: '#f3e8ff' },
+];
+
 export default function HomeScreen() {
   const { location, startWatchingLocation } = useLocation();
   const greeting = getTimeBasedGreeting();
@@ -37,6 +46,12 @@ export default function HomeScreen() {
   const [loadingRoutes, setLoadingRoutes] = useState(true);
   const [showSearchInput, setShowSearchInput] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Animation values
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(50)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
   const [mapRegion, setMapRegion] = useState({
     latitude: -1.286389,
@@ -47,6 +62,25 @@ export default function HomeScreen() {
 
   useEffect(() => {
     startWatchingLocation();
+    
+    // Entrance animations
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+    ]).start();
   }, []);
 
   useEffect(() => {
@@ -88,11 +122,8 @@ export default function HomeScreen() {
 
         if (!error && data) {
           setUserName(data.user_name);
-        } else {
-          console.warn('Failed to fetch user name:', error?.message);
         }
       }
-
       setIsLoading(false);
     };
 
@@ -112,18 +143,21 @@ export default function HomeScreen() {
           estimated_time
         `);
 
-      if (error) {
-        console.error('Error fetching routes:', error.message);
-      } else {
+      if (!error) {
         setPopularRoutes(data ?? []);
         setAllPopularRoutes(data ?? []);
       }
-
       setLoadingRoutes(false);
     };
 
     fetchRoutes();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    // Simulate refresh
+    setTimeout(() => setRefreshing(false), 1000);
+  };
 
   const clearSearch = () => {
     setSearchQuery('');
@@ -144,173 +178,268 @@ export default function HomeScreen() {
   const routesToRender = searchQuery ? allPopularRoutes : popularRoutes;
 
   return (
-    <View className="flex-1 bg-white">
-      <StatusBar barStyle="dark-content" translucent={false} backgroundColor="white" />
-      {Platform.OS === 'android' && (
-        <View style={{ height: StatusBar.currentHeight, backgroundColor: 'white' }} />
-      )}
-
-      <View className="pt-14 pb-4 px-6 flex-row items-center justify-between bg-white">
-        <View className="flex-1">
-          <Text className="font-sans text-neutral-600">{greeting},</Text>
-          {isLoading ? (
-            <ActivityIndicator size="large" color="#2563eb" />
-          ) : (
-            <Text className="font-heading text-lg text-neutral-800">
-              {userName ? ` ${userName}` : 'Guest'}! 👋
-            </Text>
-          )}
-        </View>
-        <TouchableOpacity className="w-10 h-10 bg-neutral-100 rounded-full items-center justify-center">
-          <Ionicons name="menu" size={20} color="#404040" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={{ paddingHorizontal: 24, marginBottom: 16 }}>
-        {showSearchInput ? (
-          <View style={{
-            backgroundColor: '#f5f5f5',
-            borderRadius: 25,
-            paddingHorizontal: 16,
-            paddingVertical: 4,
+    <View className="flex-1 bg-gradient-to-br from-blue-50 to-indigo-100">
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
+      
+      {/* Header with Gradient */}
+      <LinearGradient
+        colors={['#ffffff', '#f8fafc']}
+        style={{
+          paddingTop: Platform.OS === 'ios' ? 50 : ((StatusBar.currentHeight ?? 0) + 20),
+          paddingBottom: 20,
+          paddingHorizontal: 24,
+        }}
+      >
+        <Animated.View 
+          style={{
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
             flexDirection: 'row',
-            alignItems: 'center'
-          }}>
-            <Ionicons name="search" size={18} color="#737373" />
-            <TextInput
-              style={{
-                flex: 1,
-                marginLeft: 8,
-                paddingVertical: 8,
-                fontSize: 16,
-                color: '#1f2937'
-              }}
-              placeholder="Where are you going..."
-              placeholderTextColor="#9ca3af"
-              value={searchQuery}
-              onChangeText={searchRoutes}
-              autoFocus
-            />
-            <TouchableOpacity
-              style={{ backgroundColor: '#ef4444', padding: 6, borderRadius: 20, marginLeft: 8 }}
-              onPress={clearSearch}
-            >
-              <Ionicons name="close" size={16} color="white" />
-            </TouchableOpacity>
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <View className="flex-1">
+            <Text className="text-slate-600 text-base font-medium">{greeting}</Text>
+            {isLoading ? (
+              <View className="flex-row items-center mt-1">
+                <ActivityIndicator size="small" color="#3b82f6" />
+                <Text className="ml-2 text-slate-400">Loading...</Text>
+              </View>
+            ) : (
+              <Text className="text-slate-900 text-2xl font-bold mt-1">
+                {userName ? `${userName}! 👋` : 'Welcome! 👋'}
+              </Text>
+            )}
           </View>
-        ) : (
-          <TouchableOpacity
-            style={{
-              backgroundColor: '#f5f5f5',
-              borderRadius: 25,
-              paddingHorizontal: 16,
-              paddingVertical: 12,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between'
-            }}
-            onPress={() => setShowSearchInput(true)}
-            activeOpacity={0.7}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Ionicons name="search" size={18} color="#737373" />
-              <Text style={{ marginLeft: 8, color: '#9ca3af' }}>Where are you going...</Text>
+          
+          <TouchableOpacity className="relative">
+            <View className="w-12 h-12 bg-white rounded-2xl items-center justify-center shadow-lg border border-slate-100">
+              <Ionicons name="notifications" size={24} color="#64748b" />
             </View>
-            <View style={{ backgroundColor: '#3b82f6', padding: 6, borderRadius: 20 }}>
-              <Ionicons name="location" size={16} color="white" />
+            <View className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full items-center justify-center">
+              <Text className="text-white text-xs font-bold">3</Text>
             </View>
           </TouchableOpacity>
-        )}
-      </View>
+        </Animated.View>
+      </LinearGradient>
 
-      <View className="h-64 w-full">
-        {location ? (
-          <CustomMapView
-            region={mapRegion}
-            markers={vehicleMarkers}
-            showsUserLocation
-          />
-        ) : (
-          <View className="flex-1 items-center justify-center bg-neutral-100">
-            <ActivityIndicator size="large" color="#2563eb" />
-          </View>
-        )}
-      </View>
-
-      <View className="flex-1 px-6 pt-4">
-        <View className="flex-row items-center justify-between mb-4">
-          <Text className="font-heading text-lg text-neutral-800">Popular Routes</Text>
-          <Button variant="text" size="sm">See All</Button>
-        </View>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
-          {loadingRoutes ? (
-            <Text className="text-neutral-500">Loading routes...</Text>
-          ) : routesToRender.length === 0 ? (
-            <Text className="text-neutral-500">No routes found.</Text>
+      <ScrollView 
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Search Section */}
+        <Animated.View 
+          style={{
+            opacity: fadeAnim,
+            transform: [{ translateY: slideAnim }],
+            paddingHorizontal: 24,
+            marginTop: 8,
+          }}
+        >
+          {showSearchInput ? (
+            <BlurView intensity={80} className="rounded-2xl overflow-hidden">
+              <View className="bg-white/90 backdrop-blur-xl border border-white/20 rounded-2xl p-4 shadow-xl">
+                <View className="flex-row items-center">
+                  <View className="flex-1 flex-row items-center bg-slate-100 rounded-xl px-4 py-3">
+                    <Ionicons name="search" size={20} color="#64748b" />
+                    <TextInput
+                      className="flex-1 ml-3 text-slate-800 text-base"
+                      placeholder="Where are you headed?"
+                      placeholderTextColor="#94a3b8"
+                      value={searchQuery}
+                      onChangeText={searchRoutes}
+                      autoFocus
+                    />
+                  </View>
+                  <TouchableOpacity
+                    className="ml-3 w-12 h-12 bg-red-500 rounded-xl items-center justify-center"
+                    onPress={clearSearch}
+                  >
+                    <Ionicons name="close" size={20} color="white" />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </BlurView>
           ) : (
-            routesToRender.map((route) => (
+            <TouchableOpacity
+              className="bg-white rounded-2xl p-4 shadow-lg border border-slate-100"
+              onPress={() => setShowSearchInput(true)}
+              activeOpacity={0.7}
+            >
+              <View className="flex-row items-center justify-between">
+                <View className="flex-row items-center flex-1">
+                  <View className="w-10 h-10 bg-blue-100 rounded-xl items-center justify-center">
+                    <Ionicons name="search" size={20} color="#3b82f6" />
+                  </View>
+                  <Text className="ml-3 text-slate-500 text-base">Where are you headed?</Text>
+                </View>
+                <View className="w-10 h-10 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl items-center justify-center">
+                  <Ionicons name="location" size={18} color="white" />
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
+        </Animated.View>
+
+        {/* Quick Actions */}
+        {/*<Animated.View 
+          style={{
+            opacity: fadeAnim,
+            transform: [{ scale: scaleAnim }],
+            paddingHorizontal: 24,
+            marginTop: 24,
+          }}
+        >
+          <Text className="text-slate-800 text-lg font-bold mb-4">Quick Actions</Text>
+          <View className="flex-row flex-wrap justify-between">
+            {quickActions.map((action, index) => (
               <TouchableOpacity
-                key={route.id}
-                className="bg-white mr-4 rounded-xl shadow-sm border border-neutral-200 overflow-hidden"
-                style={{ width: width * 0.75 }}
-                onPress={() => handleRoutePress(route.id)}
+                key={action.id}
+                className="w-[48%] mb-4"
+                activeOpacity={0.7}
               >
-                <View className="p-4">
-                  <Text className="font-heading text-base text-neutral-800 mb-2">{route.name}</Text>
-
-                  <View className="flex-row items-center mb-1">
-                    <Ionicons name="location" size={16} color="#404040" />
-                    <Text className="font-sans text-neutral-600 ml-2">
-                      {route.start_location} to {route.end_location}
-                    </Text>
+                <View className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                  <View 
+                    className="w-12 h-12 rounded-xl items-center justify-center mb-3"
+                    style={{ backgroundColor: action.bgColor }}
+                  >
+                    <Ionicons name={action.icon as any} size={24} color={action.color} />
                   </View>
-
-                  <View className="flex-row justify-between mt-3">
-                    <View className="flex-row items-center">
-                      <Ionicons name="time" size={16} color="#0066ff" />
-                      <Text className="font-sans-medium text-neutral-700 ml-1">
-                        {route.estimated_time} min
-                      </Text>
-                    </View>
-
-                    <View className="flex-row items-center">
-                      <Ionicons name="cash" size={16} color="#0066ff" />
-                      <Text className="font-sans-medium text-neutral-700 ml-1">
-                        {formatCurrency(route.fare_amount)}
-                      </Text>
-                    </View>
-                  </View>
+                  <Text className="text-slate-800 font-semibold text-sm">{action.title}</Text>
                 </View>
               </TouchableOpacity>
-            ))
-          )}
-        </ScrollView>
-      </View>
+            ))}
+          </View>
+        </Animated.View>
 
-      <View className="bg-white pb-6 pt-2 px-6 border-t border-neutral-200">
-        <View className="flex-row justify-between">
-          <Link href="/reporting" asChild>
-            <Button
-              variant="outline"
-              leadingIcon={<Ionicons name="add" size={18} color="#525252" />}
-              className="flex-1 mr-3"
-            >
-              Report Fare
-            </Button>
-          </Link>
+        {/* Live Map */}
+        <Animated.View 
+          style={{
+            opacity: fadeAnim,
+            paddingHorizontal: 24,
+            marginTop: 8,
+          }}
+        >
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-slate-800 text-lg font-bold">Live Vehicles</Text>
+            <TouchableOpacity className="flex-row items-center">
+              <Text className="text-blue-600 font-semibold mr-1">View All</Text>
+              <Ionicons name="chevron-forward" size={16} color="#3b82f6" />
+            </TouchableOpacity>
+          </View>
+          
+          <View className="h-48 rounded-2xl overflow-hidden shadow-lg border border-slate-100">
+            {location ? (
+              <CustomMapView
+                region={mapRegion}
+                markers={vehicleMarkers}
+                showsUserLocation
+              />
+            ) : (
+              <View className="flex-1 items-center justify-center bg-slate-100">
+                <ActivityIndicator size="large" color="#3b82f6" />
+                <Text className="text-slate-500 mt-2">Loading map...</Text>
+              </View>
+            )}
+            
+            {/* Map Overlay */}
+            <View className="absolute top-4 left-4 bg-white/90 backdrop-blur-xl rounded-xl px-3 py-2">
+              <Text className="text-slate-800 font-semibold text-sm">
+                {nearbyVehicles.length} vehicles nearby
+              </Text>
+            </View>
+          </View>
+        </Animated.View>
 
-          <Link href="/stages" asChild>
-            <Button
-              variant="primary"
-              leadingIcon={<Ionicons name="location" size={18} color="white" />}
-              className="flex-1"
-            >
-              Nearby Stages
-            </Button>
-          </Link>
-        </View>
-      </View>
+        {/* Popular Routes */}
+        <Animated.View 
+          style={{
+            opacity: fadeAnim,
+            paddingHorizontal: 24,
+            marginTop: 32,
+            paddingBottom: 100,
+          }}
+        >
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-slate-800 text-lg font-bold">Popular Routes</Text>
+            <TouchableOpacity className="flex-row items-center">
+              <Text className="text-blue-600 font-semibold mr-1">See All</Text>
+              <Ionicons name="chevron-forward" size={16} color="#3b82f6" />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingRight: 24 }}
+          >
+            {loadingRoutes ? (
+              <View className="flex-row">
+                {[1, 2, 3].map((i) => (
+                  <View key={i} className="w-72 h-32 bg-slate-200 rounded-2xl mr-4 animate-pulse" />
+                ))}
+              </View>
+            ) : routesToRender.length === 0 ? (
+              <View className="w-72 h-32 bg-slate-100 rounded-2xl items-center justify-center">
+                <Text className="text-slate-500">No routes found</Text>
+              </View>
+            ) : (
+              routesToRender.map((route, index) => (
+                <TouchableOpacity
+                  key={route.id}
+                  className="mr-4"
+                  style={{ width: width * 0.8 }}
+                  onPress={() => handleRoutePress(route.id)}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={['#ffffff', '#f8fafc']}
+                    className="rounded-2xl shadow-lg border border-slate-100 overflow-hidden"
+                  >
+                    <View className="p-5">
+                      <View className="flex-row items-center justify-between mb-3">
+                        <Text className="text-slate-800 text-lg font-bold flex-1">
+                          {route.name}
+                        </Text>
+                        <View className="w-8 h-8 bg-green-100 rounded-full items-center justify-center">
+                          <View className="w-3 h-3 bg-green-500 rounded-full" />
+                        </View>
+                      </View>
+
+                      <View className="flex-row items-center mb-4">
+                        <View className="w-8 h-8 bg-blue-100 rounded-full items-center justify-center">
+                          <Ionicons name="location" size={16} color="#3b82f6" />
+                        </View>
+                        <Text className="text-slate-600 ml-3 flex-1" numberOfLines={1}>
+                          {route.start_location} → {route.end_location}
+                        </Text>
+                      </View>
+
+                      <View className="flex-row justify-between">
+                        <View className="flex-row items-center bg-blue-50 rounded-xl px-3 py-2">
+                          <Ionicons name="time" size={16} color="#3b82f6" />
+                          <Text className="text-blue-700 font-semibold ml-2">
+                            {route.estimated_time}min
+                          </Text>
+                        </View>
+
+                        <View className="flex-row items-center bg-green-50 rounded-xl px-3 py-2">
+                          <Ionicons name="cash" size={16} color="#10b981" />
+                          <Text className="text-green-700 font-semibold ml-2">
+                            {formatCurrency(route.fare_amount)}
+                          </Text>
+                        </View>
+                      </View>
+                    </View>
+                  </LinearGradient>
+                </TouchableOpacity>
+              ))
+            )}
+          </ScrollView>
+        </Animated.View>
+      </ScrollView>
     </View>
   );
 }

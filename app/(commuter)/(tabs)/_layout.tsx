@@ -130,7 +130,7 @@ export default function TabLayout() {
           ),
         }}
       />
-      <Tabs.Screen
+      {/*<Tabs.Screen
         name="search"
         options={{
           tabBarLabel: 'Search',
@@ -138,7 +138,7 @@ export default function TabLayout() {
             <TabBarIcon name="search-outline" color={color} size={size} />
           ),
         }}
-      />
+      />*/}
       <Tabs.Screen
         name="reporting"
         options={{
